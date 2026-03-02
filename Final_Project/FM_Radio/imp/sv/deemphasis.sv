@@ -39,11 +39,11 @@ module deemphasis import fir_pkg::*; (
         // After shift: y_new[1]=old y0_reg, y_new[0]=old y0_reg (not yet updated)
         prod0  = IIR_X_COEFFS[0] * x_in;
         prod1  = IIR_X_COEFFS[1] * x0_reg;
-        c_y1   = (prod0 / (1 << BITS)) + (prod1 / (1 << BITS));
+        c_y1   = fir_pkg::div1024_f(prod0) + fir_pkg::div1024_f(prod1);
 
         // y_coeffs[0]=0 → skip; y_coeffs[1]=-666 * old y0
         prod0  = IIR_Y_COEFFS[1] * y0_reg;
-        c_y2   = prod0 / (1 << BITS);
+        c_y2   = fir_pkg::div1024_f(prod0);
 
         next_y0 = c_y1 + c_y2;
     end

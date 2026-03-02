@@ -2,6 +2,12 @@
 // demodulate.sv — FM Demodulator
 // Matches C reference: demodulate() in fm_radio.cpp
 // Uses qarctan_f() function for inline evaluation
+//
+// 4-stage pipeline:
+//   Stg1:  I/Q cross-multiply → r_val, i_val
+//   Stg2a: abs, numerator, denominator preparation
+//   Stg2b: division (numer / denom → r)
+//   Stg3:  finish qarctan & output gain
 // =============================================================
 
 module demodulate import fir_pkg::*, qarctan_pkg::*; (
@@ -22,7 +28,7 @@ module demodulate import fir_pkg::*, qarctan_pkg::*; (
     // ----------------------------------------------------
     int prod_rr, prod_ii, prod_ri, prod_ir;
     int r_val, i_val;
-    
+
     // Stage 1 Registers
     int stg1_r_val, stg1_i_val;
     logic stg1_valid;
@@ -38,30 +44,43 @@ module demodulate import fir_pkg::*, qarctan_pkg::*; (
     end
 
     // ----------------------------------------------------
-    // PIPELINE STAGE 2: Start qarctan (abs_y, r division)
+    // PIPELINE STAGE 2a: Prepare numerator & denominator
     // ----------------------------------------------------
-    int stg2_y, stg2_x, stg2_abs_y;
-    int stg2_r_calc;
-    
-    // Stage 2 Registers
-    int stg2_y_reg, stg2_x_reg, stg2_r;
-    logic stg2_valid;
+    int stg2a_abs_y;
+    int stg2a_numer_calc, stg2a_denom_calc;
 
-    // Evaluate intermediate division
+    // Stage 2a Registers
+    int stg2a_numer, stg2a_denom;
+    logic stg2a_x_ge0, stg2a_y_neg;
+    logic stg2a_valid;
+
     always_comb begin
-        stg2_y = stg1_i_val;
-        stg2_x = stg1_r_val;
-        
         // abs(y) + 1
-        stg2_abs_y = (stg2_y < 0) ? -stg2_y : stg2_y;
-        stg2_abs_y = stg2_abs_y + 1;
-        
-        // Division Block
-        if (stg2_x >= 0) begin
-            stg2_r_calc = ((stg2_x - stg2_abs_y) * QUANT_VAL) / (stg2_x + stg2_abs_y);
+        stg2a_abs_y = (stg1_i_val < 0) ? -stg1_i_val : stg1_i_val;
+        stg2a_abs_y = stg2a_abs_y + 1;
+
+        // Prepare numerator and denominator for division
+        if (stg1_r_val >= 0) begin
+            stg2a_numer_calc = (stg1_r_val - stg2a_abs_y) * QUANT_VAL;
+            stg2a_denom_calc = stg1_r_val + stg2a_abs_y;
         end else begin
-            stg2_r_calc = ((stg2_x + stg2_abs_y) * QUANT_VAL) / (stg2_abs_y - stg2_x);
+            stg2a_numer_calc = (stg1_r_val + stg2a_abs_y) * QUANT_VAL;
+            stg2a_denom_calc = stg2a_abs_y - stg1_r_val;
         end
+    end
+
+    // ----------------------------------------------------
+    // PIPELINE STAGE 2b: Division only
+    // ----------------------------------------------------
+    int stg2b_r_calc;
+
+    // Stage 2b Registers
+    int stg2b_r;
+    logic stg2b_x_ge0, stg2b_y_neg;
+    logic stg2b_valid;
+
+    always_comb begin
+        stg2b_r_calc = stg2a_numer / stg2a_denom;
     end
 
     // ----------------------------------------------------
@@ -71,17 +90,17 @@ module demodulate import fir_pkg::*, qarctan_pkg::*; (
     int demod_val;
 
     always_comb begin
-        if (stg2_x_reg >= 0) begin
-            stg3_prod = qarctan_pkg::QUAD1 * stg2_r;
+        if (stg2b_x_ge0) begin
+            stg3_prod = qarctan_pkg::QUAD1 * stg2b_r;
             stg3_angle = qarctan_pkg::QUAD1 - fir_pkg::div1024_f(stg3_prod);
         end else begin
-            stg3_prod = qarctan_pkg::QUAD1 * stg2_r;
+            stg3_prod = qarctan_pkg::QUAD1 * stg2b_r;
             stg3_angle = qarctan_pkg::QUAD3 - fir_pkg::div1024_f(stg3_prod);
         end
-        
+
         // negate if in quad III or IV
-        stg3_angle = (stg2_y_reg < 0) ? -stg3_angle : stg3_angle;
-        
+        stg3_angle = stg2b_y_neg ? -stg3_angle : stg3_angle;
+
         // out = DEQUANTIZE(gain * qarctan(i, r))
         demod_val = fir_pkg::div1024_f(FM_DEMOD_GAIN * stg3_angle);
     end
@@ -91,41 +110,56 @@ module demodulate import fir_pkg::*, qarctan_pkg::*; (
     // ----------------------------------------------------
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            real_prev <= '0;
-            imag_prev <= '0;
-            
-            stg1_r_val <= '0;
-            stg1_i_val <= '0;
-            stg1_valid <= 1'b0;
-            
-            stg2_y_reg <= '0;
-            stg2_x_reg <= '0;
-            stg2_r <= '0;
-            stg2_valid <= 1'b0;
-            
-            demod_out <= '0;
-            valid_out <= 1'b0;
+            real_prev   <= '0;
+            imag_prev   <= '0;
+
+            stg1_r_val  <= '0;
+            stg1_i_val  <= '0;
+            stg1_valid  <= 1'b0;
+
+            stg2a_numer <= '0;
+            stg2a_denom <= 32'd1;  // avoid div-by-zero during reset
+            stg2a_x_ge0 <= 1'b0;
+            stg2a_y_neg <= 1'b0;
+            stg2a_valid <= 1'b0;
+
+            stg2b_r     <= '0;
+            stg2b_x_ge0 <= 1'b0;
+            stg2b_y_neg <= 1'b0;
+            stg2b_valid <= 1'b0;
+
+            demod_out   <= '0;
+            valid_out   <= 1'b0;
         end else begin
             // Stage 1
             stg1_valid <= valid_in;
             if (valid_in) begin
                 stg1_r_val <= r_val;
                 stg1_i_val <= i_val;
-                real_prev <= real_in;
-                imag_prev <= imag_in;
+                real_prev  <= real_in;
+                imag_prev  <= imag_in;
             end
-            
-            // Stage 2
-            stg2_valid <= stg1_valid;
+
+            // Stage 2a
+            stg2a_valid <= stg1_valid;
             if (stg1_valid) begin
-                stg2_y_reg <= stg2_y;
-                stg2_x_reg <= stg2_x;
-                stg2_r     <= stg2_r_calc;
+                stg2a_numer <= stg2a_numer_calc;
+                stg2a_denom <= stg2a_denom_calc;
+                stg2a_x_ge0 <= (stg1_r_val >= 0);
+                stg2a_y_neg <= (stg1_i_val < 0);
             end
-            
+
+            // Stage 2b
+            stg2b_valid <= stg2a_valid;
+            if (stg2a_valid) begin
+                stg2b_r     <= stg2b_r_calc;
+                stg2b_x_ge0 <= stg2a_x_ge0;
+                stg2b_y_neg <= stg2a_y_neg;
+            end
+
             // Stage 3 (Output)
-            valid_out <= stg2_valid;
-            if (stg2_valid) begin
+            valid_out <= stg2b_valid;
+            if (stg2b_valid) begin
                 demod_out <= demod_val;
             end
         end
