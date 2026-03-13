@@ -7,7 +7,7 @@
 
 This repository contains homework assignments and projects for the **CE387 - Real-Time Digital Systems Design and Verification with FPGAs** course.
 
-## 📚 Homework Assignments
+### 1. Homework Assignments
 
 | Assignment | Description | PDF Link |
 | :--- | :--- | :--- |
@@ -54,7 +54,9 @@ The repository is organized by homework assignment, typically following this lay
 - `syn/`: Synthesis scripts and outcome (Synplify Pro/Cadence Genus).
 - `uvm/`: UVM verification environments (for later assignments).
 - `source/`: Reference input data, labels, and golden test vectors.
-- `FPGA_HW<n>.pdf`: Detailed assignment description and requirements for each HW.
+
+## 📦 Archive
+Previous course materials (Lectures and Demos) have been moved to the [**`archive`**](https://github.com/wILLIEWILLYWILLIe/CE387/tree/archive) branch to keep the main branch focused on assignment implementations.
 
 ## 🛠️ Usage
 
