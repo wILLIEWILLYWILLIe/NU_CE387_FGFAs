@@ -56,7 +56,7 @@ The repository is organized by homework assignment, typically following this lay
 - `source/`: Reference input data, labels, and golden test vectors.
 
 ## 📦 Archive
-Previous course materials (Lectures and Demos) have been moved to the [**`archive`**](https://github.com/wILLIEWILLYWILLIe/CE387/tree/archive) branch to keep the main branch focused on assignment implementations.
+Previous course materials (Lectures and Demos) have been moved to the [**`archive`**](https://github.com/wILLIEWILLYWILLIe/NU_CE387_FGFAs/tree/archive?tab=readme-ov-file) branch to keep the main branch focused on assignment implementations.
 
 ## 🛠️ Usage
 
